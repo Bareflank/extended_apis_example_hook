@@ -31,7 +31,6 @@ sudo reboot
 
 ~/hypervisor/configure -m src_extended_apis_example_hook/bin/hook.modules
 make
-make test
 ```
 
 To run this example, we need to first load the hypervisor, and then run the
