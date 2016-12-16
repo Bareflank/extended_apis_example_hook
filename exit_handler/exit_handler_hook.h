@@ -63,6 +63,8 @@ public:
     void
     monitor_trap_callback()
     {
+        expects(m_entry != nullptr);
+
         // Reset the trap. This ensures that if the hooked function executes
         // again, we trap again. Note that since we are modifying an EPTE, we
         // need to flush the EPT mappings. Normally, you would want to only
@@ -95,6 +97,8 @@ public:
         //   to increase the size of the identity map.
         if (reason == intel_x64::vmcs::exit_reason::basic_exit_reason::ept_violation)
         {
+            expects(m_entry != nullptr);
+
             auto &&mask = ~(ept::pt::size_bytes - 1);
             auto &&virt = intel_x64::vmcs::guest_linear_address::get();
             auto &&phys = intel_x64::vmcs::guest_physical_address::get();

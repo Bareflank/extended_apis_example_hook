@@ -51,6 +51,8 @@ public:
     write_fields(gsl::not_null<vmcs_intel_x64_state *> host_state,
                  gsl::not_null<vmcs_intel_x64_state *> guest_state) override
     {
+        static auto initialized = false;
+
         // Let Bareflank do it's thing before we setup the VMCS. This setups
         // up a lot of default fields for us, which we can always overwrite
         // if we want once this is done.
@@ -63,15 +65,22 @@ public:
         this->enable_ept();
         this->enable_vpid();
 
-        // Setup an identity map. There are a couple of notes here:
-        // - Using an identity map prevents us from having to implement on
-        //   demand paging, which has it's own set of issues. Note that we
-        //   setup by default 64G of memory, but you might need more.
-        // - We use 2m granularity here. We do this because VMWare doesn't
-        //   support 1g granularity, and because when we hook, we will convert
-        //   a portion of the pages to 4k granularity, and this reduces the
-        //   total number of pages that are needed to do this.
-        this->setup_ept_identity_map_2m(0, MAX_PHYS_ADDR);
+        if (!initialized)
+        {
+            // Setup an identity map. There are a couple of notes here:
+            // - Using an identity map prevents us from having to implement on
+            //   demand paging, which has it's own set of issues. Note that we
+            //   setup by default 64G of memory, but you might need more.
+            // - We use 2m granularity here. We do this because VMWare doesn't
+            //   support 1g granularity, and because when we hook, we will convert
+            //   a portion of the pages to 4k granularity, and this reduces the
+            //   total number of pages that are needed to do this.
+            this->setup_ept_identity_map_2m(0, MAX_PHYS_ADDR);
+
+            // Since EPT in the Extended APIs is global, we should only set it
+            // up once.
+            initialized = true;
+        }
     }
 };
 

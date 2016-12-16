@@ -40,7 +40,6 @@ main(int argc, const char *argv[])
 
     guard_exceptions([&]
     {
-
         // Open a connection to the bfdriver. We could just run the vmcall
         // instruction ourselves, but we would need to write a version for both
         // Windows and Linux, and that's a pain, so instead we reuse the IOCTL
@@ -60,7 +59,7 @@ main(int argc, const char *argv[])
         // Tell the hypervisor to hook. Any attempt to execute the hello world
         // function should be redirected to the hooked hello world function
         // instead
-        ctl.call_ioctl_vmcall(&regs, 0);
+        ctl.call_ioctl_vmcall(&regs, 0xFFFFFFFFFFFFFFFF);
 
         // Attempt to call hello world. If all goes well, this will end up calling
         // the hooked version instead. Note that we call it more than once to
@@ -68,7 +67,6 @@ main(int argc, const char *argv[])
         hello_world();
         hello_world();
         hello_world();
-
     });
 
     return 0;
