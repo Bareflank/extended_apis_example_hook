@@ -63,15 +63,14 @@ public:
     void
     monitor_trap_callback()
     {
-        expects(m_entry != nullptr);
-
         // Reset the trap. This ensures that if the hooked function executes
         // again, we trap again. Note that since we are modifying an EPTE, we
         // need to flush the EPT mappings. Normally, you would want to only
         // flush the TLB associated with a specific set of virtual addresses
         // and VPID, but to keep the code simple for this example, we just do
         // a global flush.
-        m_entry->trap_on_access();
+        auto &&entry = eapis_vmcs()->gpa_to_epte(m_func_phys);
+        entry.trap_on_access();
         intel_x64::vmx::invept_global();
 
         // Resume the VM
@@ -97,8 +96,6 @@ public:
         //   to increase the size of the identity map.
         if (reason == intel_x64::vmcs::exit_reason::basic_exit_reason::ept_violation)
         {
-            expects(m_entry != nullptr);
-
             auto &&mask = ~(ept::pt::size_bytes - 1);
             auto &&virt = intel_x64::vmcs::guest_linear_address::get();
             auto &&phys = intel_x64::vmcs::guest_physical_address::get();
@@ -131,7 +128,8 @@ public:
                 // We need the code to complete it's execution, which means we
                 // need remove the trap on the EPTE. Note that since we are
                 // modifying an EPTE, we need to flush the EPT mappings again.
-                m_entry->pass_through_access();
+                auto &&entry = eapis_vmcs()->gpa_to_epte(m_func_phys);
+                entry.pass_through_access();
                 intel_x64::vmx::invept_global();
 
                 // Since we removed the trap on the EPTE, we need a way to turn
@@ -164,46 +162,73 @@ public:
     void
     handle_vmcall_registers(vmcall_registers_t &regs) override
     {
-        // Get the physical address of the function we plan to hook.
-        auto &&cr3 = intel_x64::vmcs::guest_cr3::get();
-        m_func_phys = bfn::virt_to_phys_with_cr3(regs.r02, cr3);
+        if (regs.r02 == 1)
+        {
+            // Get the physical address of the function we plan to hook.
+            auto &&cr3 = intel_x64::vmcs::guest_cr3::get();
+            m_func_phys = bfn::virt_to_phys_with_cr3(regs.r03, cr3);
 
-        // We need to know what the physical address is for the function
-        // we plan to hook aligned to both 2m and 4k. Currently, the physical
-        // address that this function is on, exists on a 2m EPTE. The problem
-        // is, the application is small, and thus, the kernel is only going
-        // to give a small portion of that 2m EPTE to our application, and
-        // will give out the remaining space to other applications. If we hook
-        // the entire 2m, we could end up with a LOT of traps from applications
-        // running in the background. So... to fix this issue, we will convert
-        // the 2m EPTE to a 4k identity map, and then only hook the 4k region
-        // associated with the function we plan to hook.
-        auto &&func_phys_2m = m_func_phys & ~(ept::pd::size_bytes - 1);
-        auto &&func_phys_4k = m_func_phys & ~(ept::pt::size_bytes - 1);
+            // We need to know what the physical address is for the function
+            // we plan to hook aligned to both 2m and 4k. Currently, the physical
+            // address that this function is on, exists on a 2m EPTE. The problem
+            // is, the application is small, and thus, the kernel is only going
+            // to give a small portion of that 2m EPTE to our application, and
+            // will give out the remaining space to other applications. If we hook
+            // the entire 2m, we could end up with a LOT of traps from applications
+            // running in the background. So... to fix this issue, we will convert
+            // the 2m EPTE to a 4k identity map, and then only hook the 4k region
+            // associated with the function we plan to hook.
+            auto &&func_phys_2m = m_func_phys & ~(ept::pd::size_bytes - 1);
+            auto &&func_phys_4k = m_func_phys & ~(ept::pt::size_bytes - 1);
 
-        // Get the start / end location for the 2m EPTE that we plan to
-        // convert to a 4k identity map.
-        auto &&saddr = func_phys_2m;
-        auto &&eaddr = func_phys_2m + ept::pd::size_bytes;
+            // Get the start / end location for the 2m EPTE that we plan to
+            // convert to a 4k identity map.
+            auto &&saddr = func_phys_2m;
+            auto &&eaddr = func_phys_2m + ept::pd::size_bytes;
 
-        // Convert the EPTE associated with the function we plan to hook from
-        // a 2m EPTE to a 4k identify map that takes up the same physical
-        // address range.
-        eapis_vmcs()->unmap(func_phys_2m);
-        eapis_vmcs()->setup_ept_identity_map_4k(saddr, eaddr);
+            // Convert the EPTE associated with the function we plan to hook from
+            // a 2m EPTE to a 4k identify map that takes up the same physical
+            // address range.
+            eapis_vmcs()->unmap(func_phys_2m);
+            eapis_vmcs()->setup_ept_identity_map_4k(saddr, eaddr);
 
-        // Get the EPTE associated with the function we plan to hook, and mark
-        // this EPTE as trapped. Any accesses to this EPTE will result in a
-        // EPT Violation VM exit. Once again, we need to flush the TLB since
-        // we modified EPT.
-        m_entry = eapis_vmcs()->gpa_to_epte(func_phys_4k);
-        m_entry->trap_on_access();
-        intel_x64::vmx::invept_global();
+            // Get the EPTE associated with the function we plan to hook, and mark
+            // this EPTE as trapped. Any accesses to this EPTE will result in a
+            // EPT Violation VM exit. Once again, we need to flush the TLB since
+            // we modified EPT.
+            auto &&entry = eapis_vmcs()->gpa_to_epte(m_func_phys);
+            entry.trap_on_access();
+            intel_x64::vmx::invept_global();
 
-        bfdebug << "trapping on: " << view_as_pointer(func_phys_4k) << bfendl;
+            bfdebug << "trapping on: " << view_as_pointer(func_phys_4k) << bfendl;
 
-        m_func = regs.r02;
-        m_hook = regs.r03;
+            m_func = regs.r03;
+            m_hook = regs.r04;
+        }
+        else
+        {
+            // Just like above, we need to calculate both the 2m physical
+            // address, but also the 4k.
+            auto &&func_phys_2m = m_func_phys & ~(ept::pd::size_bytes - 1);
+            auto &&func_phys_4k = m_func_phys & ~(ept::pt::size_bytes - 1);
+
+            // We are going to unmap the previously setup 4k identify map, and
+            // convert it back to a single 2m EPT entry. This calculates the
+            // range just like above.
+            auto &&saddr = func_phys_2m;
+            auto &&eaddr = func_phys_2m + ept::pd::size_bytes;
+
+            // Finally, unmap the hook that was placed above, and put EPT back
+            // to normal. Once this is done, we should stop getting EPT
+            // violations, and the system should execute as normal.
+            eapis_vmcs()->unmap_ept_identity_map_4k(saddr, eaddr);
+            eapis_vmcs()->map_2m(func_phys_2m, func_phys_2m, ept::memory_attr::pt_wb);
+
+            bfdebug << "passing through on: " << view_as_pointer(func_phys_4k) << bfendl;
+
+            m_func = 0;
+            m_hook = 0;
+        }
     }
 
 private:
@@ -211,7 +236,6 @@ private:
     uintptr_t m_func;
     uintptr_t m_hook;
     uintptr_t m_func_phys;
-    ept_entry_intel_x64 *m_entry;
 };
 
 #endif

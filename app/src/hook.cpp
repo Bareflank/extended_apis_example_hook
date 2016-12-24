@@ -22,6 +22,7 @@
 #include <ioctl.h>
 #include <guard_exceptions.h>
 
+#include <sched.h>
 #include <iostream>
 
 void
@@ -38,6 +39,16 @@ main(int argc, const char *argv[])
     (void) argc;
     (void) argv;
 
+    vmcall_registers_t regs;
+
+    // We need to make sure that we are running on the correct core. When we
+    // perform the vmcall, its likely that this application will end up running
+    // on core #0 anyways, but this make sure there are no issues regardless.
+    cpu_set_t  mask;
+    CPU_ZERO(&mask);
+    CPU_SET(0, &mask);
+    sched_setaffinity(0, sizeof(mask), &mask);
+
     guard_exceptions([&]
     {
         // Open a connection to the bfdriver. We could just run the vmcall
@@ -50,16 +61,16 @@ main(int argc, const char *argv[])
         // Setup our vmcall to tell the hypervisor what function to hook, and what
         // to hook it with. Note that we could have used JSON as well, but in this
         // case, a register based vmcall was a lot easier
-        vmcall_registers_t regs;
         regs.r00 = VMCALL_REGISTERS;
         regs.r01 = VMCALL_MAGIC_NUMBER;
-        regs.r02 = reinterpret_cast<uintptr_t>(hello_world);
-        regs.r03 = reinterpret_cast<uintptr_t>(hooked_hello_world);
+        regs.r02 = 1;
+        regs.r03 = reinterpret_cast<uintptr_t>(hello_world);
+        regs.r04 = reinterpret_cast<uintptr_t>(hooked_hello_world);
 
         // Tell the hypervisor to hook. Any attempt to execute the hello world
         // function should be redirected to the hooked hello world function
         // instead
-        ctl.call_ioctl_vmcall(&regs, 0xFFFFFFFFFFFFFFFF);
+        ctl.call_ioctl_vmcall(&regs, 0);
 
         // Attempt to call hello world. If all goes well, this will end up calling
         // the hooked version instead. Note that we call it more than once to
@@ -67,6 +78,18 @@ main(int argc, const char *argv[])
         hello_world();
         hello_world();
         hello_world();
+
+        // Setup our vmcall to tell the hypervisor to unhook the previous hook
+        // that we just installed. If your hooking the kernel this step would
+        // likely not be needed.
+        regs.r00 = VMCALL_REGISTERS;
+        regs.r01 = VMCALL_MAGIC_NUMBER;
+        regs.r02 = 2;
+
+        // Tell the hypervisor to hook. Any attempt to execute the hello world
+        // function should be redirected to the hooked hello world function
+        // instead
+        ctl.call_ioctl_vmcall(&regs, 0);
     });
 
     return 0;
