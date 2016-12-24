@@ -86,9 +86,8 @@ main(int argc, const char *argv[])
         regs.r01 = VMCALL_MAGIC_NUMBER;
         regs.r02 = 2;
 
-        // Tell the hypervisor to hook. Any attempt to execute the hello world
-        // function should be redirected to the hooked hello world function
-        // instead
+        // Tell the hypervisor to unhook. This should put the system back to
+        // normal, and the hypervisor should stop trapping. 
         ctl.call_ioctl_vmcall(&regs, 0);
     });
 
