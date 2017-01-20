@@ -38,6 +38,7 @@
 using namespace intel_x64;
 
 extern std::unique_ptr<root_ept_intel_x64> g_root_ept;
+extern std::unique_ptr<root_ept_intel_x64> g_root_ept_hook;
 
 class exit_handler_hook : public exit_handler_intel_x64_eapis
 {
@@ -67,14 +68,8 @@ public:
     monitor_trap_callback()
     {
         // Reset the trap. This ensures that if the hooked function executes
-        // again, we trap again. Note that since we are modifying an EPTE, we
-        // need to flush the EPT mappings. Normally, you would want to only
-        // flush the TLB associated with a specific set of virtual addresses
-        // and VPID, but to keep the code simple for this example, we just do
-        // a global flush.
-        auto &&entry = g_root_ept->gpa_to_epte(m_func_phys);
-        entry.trap_on_access();
-        intel_x64::vmx::invept_global();
+        // again, we trap again.
+        eapis_vmcs()->set_eptp(g_root_ept_hook->eptp());
 
         // Resume the VM
         eapis_vmcs()->resume();
@@ -99,6 +94,11 @@ public:
         //   to increase the size of the identity map.
         if (reason == intel_x64::vmcs::exit_reason::basic_exit_reason::ept_violation)
         {
+            // WARNING: Do not use the invept or invvpid instructions in this 
+            //          function. Doing so will cause an intifinite loop. Intel 
+            //          specifically states not to invalidate as the hardware is 
+            //          doing this for you. 
+
             auto &&mask = ~(ept::pt::size_bytes - 1);
             auto &&virt = intel_x64::vmcs::guest_linear_address::get();
             auto &&phys = intel_x64::vmcs::guest_physical_address::get();
@@ -127,13 +127,10 @@ public:
                 // hook.
                 if (virt == m_func)
                     m_state_save->rip = m_hook;
-
+		
                 // We need the code to complete it's execution, which means we
-                // need remove the trap on the EPTE. Note that since we are
-                // modifying an EPTE, we need to flush the EPT mappings again.
-                auto &&entry = g_root_ept->gpa_to_epte(m_func_phys);
-                entry.pass_through_access();
-                intel_x64::vmx::invept_global();
+                // need to use the EPTP that doesn't contain our trap
+                eapis_vmcs()->set_eptp(g_root_ept->eptp());
 
                 // Since we removed the trap on the EPTE, we need a way to turn
                 // the trap back on once the instruction finishes it's
@@ -162,6 +159,7 @@ public:
     /// by the VM. We override it here to provide the example with a means
     /// to report which function to hook, and what to hook it with.
     ///
+
     void
     handle_vmcall_registers(vmcall_registers_t &regs) override
     {
@@ -192,16 +190,20 @@ public:
             // Convert the EPTE associated with the function we plan to hook from
             // a 2m EPTE to a 4k identify map that takes up the same physical
             // address range.
-            g_root_ept->unmap(func_phys_2m);
-            g_root_ept->setup_identity_map_4k(saddr, eaddr);
+            g_root_ept_hook->unmap(func_phys_2m);
+            g_root_ept_hook->setup_identity_map_4k(saddr, eaddr);
 
             // Get the EPTE associated with the function we plan to hook, and mark
             // this EPTE as trapped. Any accesses to this EPTE will result in a
-            // EPT Violation VM exit. Once again, we need to flush the TLB since
-            // we modified EPT.
-            auto &&entry = g_root_ept->gpa_to_epte(m_func_phys);
+            // EPT Violation VM exit.
+            auto &&entry = g_root_ept_hook->gpa_to_epte(m_func_phys);
             entry.trap_on_access();
-            intel_x64::vmx::invept_global();
+            
+            // Instead of changing the EPTP that we started with, we will change 
+            // a "hooked" version. This way, the EPTP being used by the other cores 
+            // is not effected, and we can use this unmodified EPTP as our pass 
+            // through EPTP when we want an instruction to execute
+            eapis_vmcs()->set_eptp(g_root_ept_hook->eptp());
 
             bfdebug << "trapping on: " << view_as_pointer(func_phys_4k) << bfendl;
 
@@ -222,10 +224,12 @@ public:
             auto &&eaddr = func_phys_2m + ept::pd::size_bytes;
 
             // Finally, unmap the hook that was placed above, and put EPT back
-            // to normal. Once this is done, we should stop getting EPT
-            // violations, and the system should execute as normal.
-            g_root_ept->unmap_identity_map_4k(saddr, eaddr);
-            g_root_ept->map_2m(func_phys_2m, func_phys_2m, ept::memory_attr::pt_wb);
+            // to normal.
+            g_root_ept_hook->unmap_identity_map_4k(saddr, eaddr);
+            g_root_ept_hook->map_2m(func_phys_2m, func_phys_2m, ept::memory_attr::pt_wb);
+
+            // Put the EPTP back to the one that has all pass-through. 
+            eapis_vmcs()->set_eptp(g_root_ept->eptp());
 
             bfdebug << "passing through on: " << view_as_pointer(func_phys_4k) << bfendl;
 

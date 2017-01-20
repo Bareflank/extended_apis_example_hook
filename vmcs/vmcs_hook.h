@@ -33,6 +33,7 @@ using namespace vmcs;
 #endif
 
 std::unique_ptr<root_ept_intel_x64> g_root_ept;
+std::unique_ptr<root_ept_intel_x64> g_root_ept_hook;
 
 class vmcs_hook : public vmcs_intel_x64_eapis
 {
@@ -64,6 +65,7 @@ public:
         if (!initialized)
         {
             g_root_ept = std::make_unique<root_ept_intel_x64>();
+            g_root_ept_hook = std::make_unique<root_ept_intel_x64>();
 
             // Setup an identity map. There are a couple of notes here:
             // - Using an identity map prevents us from having to implement on
@@ -74,6 +76,7 @@ public:
             //   a portion of the pages to 4k granularity, and this reduces the
             //   total number of pages that are needed to do this.
             g_root_ept->setup_identity_map_2m(0, MAX_PHYS_ADDR);
+            g_root_ept_hook->setup_identity_map_2m(0, MAX_PHYS_ADDR);
 
             // Since EPT in the Extended APIs is global, we should only set it
             // up once.
