@@ -55,7 +55,7 @@ INCLUDE_PATHS+=./
 INCLUDE_PATHS+=%HYPER_ABS%/include/
 INCLUDE_PATHS+=%HYPER_ABS%/bfm/include/
 
-LIBS+=bfm_static
+LIBS+=bfm_ioctl_static
 
 LIBRARY_PATHS+=%BUILD_ABS%/makefiles/bfm/bin/native/
 
