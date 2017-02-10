@@ -69,10 +69,10 @@ public:
     {
         // Reset the trap. This ensures that if the hooked function executes
         // again, we trap again.
-        eapis_vmcs()->set_eptp(g_root_ept_hook->eptp());
+        m_vmcs_eapis->set_eptp(g_root_ept_hook->eptp());
 
         // Resume the VM
-        eapis_vmcs()->resume();
+        m_vmcs_eapis->resume();
     }
 
     /// Handle Exit
@@ -94,10 +94,10 @@ public:
         //   to increase the size of the identity map.
         if (reason == intel_x64::vmcs::exit_reason::basic_exit_reason::ept_violation)
         {
-            // WARNING: Do not use the invept or invvpid instructions in this 
-            //          function. Doing so will cause an intifinite loop. Intel 
-            //          specifically states not to invalidate as the hardware is 
-            //          doing this for you. 
+            // WARNING: Do not use the invept or invvpid instructions in this
+            //          function. Doing so will cause an intifinite loop. Intel
+            //          specifically states not to invalidate as the hardware is
+            //          doing this for you.
 
             auto &&mask = ~(ept::pt::size_bytes - 1);
             auto &&virt = intel_x64::vmcs::guest_linear_address::get();
@@ -127,10 +127,10 @@ public:
                 // hook.
                 if (virt == m_func)
                     m_state_save->rip = m_hook;
-		
+
                 // We need the code to complete it's execution, which means we
                 // need to use the EPTP that doesn't contain our trap
-                eapis_vmcs()->set_eptp(g_root_ept->eptp());
+                m_vmcs_eapis->set_eptp(g_root_ept->eptp());
 
                 // Since we removed the trap on the EPTE, we need a way to turn
                 // the trap back on once the instruction finishes it's
@@ -139,7 +139,7 @@ public:
                 this->register_monitor_trap(&exit_handler_hook::monitor_trap_callback);
 
                 // Resume the VM
-                eapis_vmcs()->resume();
+                m_vmcs_eapis->resume();
             }
             else
             {
@@ -198,12 +198,12 @@ public:
             // EPT Violation VM exit.
             auto &&entry = g_root_ept_hook->gpa_to_epte(m_func_phys);
             entry.trap_on_access();
-            
-            // Instead of changing the EPTP that we started with, we will change 
-            // a "hooked" version. This way, the EPTP being used by the other cores 
-            // is not effected, and we can use this unmodified EPTP as our pass 
+
+            // Instead of changing the EPTP that we started with, we will change
+            // a "hooked" version. This way, the EPTP being used by the other cores
+            // is not effected, and we can use this unmodified EPTP as our pass
             // through EPTP when we want an instruction to execute
-            eapis_vmcs()->set_eptp(g_root_ept_hook->eptp());
+            m_vmcs_eapis->set_eptp(g_root_ept_hook->eptp());
 
             bfdebug << "trapping on: " << view_as_pointer(func_phys_4k) << bfendl;
 
@@ -228,8 +228,8 @@ public:
             g_root_ept_hook->unmap_identity_map_4k(saddr, eaddr);
             g_root_ept_hook->map_2m(func_phys_2m, func_phys_2m, ept::memory_attr::pt_wb);
 
-            // Put the EPTP back to the one that has all pass-through. 
-            eapis_vmcs()->set_eptp(g_root_ept->eptp());
+            // Put the EPTP back to the one that has all pass-through.
+            m_vmcs_eapis->set_eptp(g_root_ept->eptp());
 
             bfdebug << "passing through on: " << view_as_pointer(func_phys_4k) << bfendl;
 
