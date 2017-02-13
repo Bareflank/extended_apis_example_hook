@@ -44,5 +44,5 @@ make quick
 sudo ./makefiles/src_extended_apis_example_hook/app/bin/native/hook
 
 make stop
-make driver_load
+make driver_unload
 ```
