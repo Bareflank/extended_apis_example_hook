@@ -54,7 +54,6 @@ main(int argc, const char *argv[])
     sched_setaffinity(0, sizeof(mask), &mask);
 #endif
 
-
     guard_exceptions([&]
     {
         // Open a connection to the bfdriver. We could just run the vmcall
