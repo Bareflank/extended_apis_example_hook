@@ -22,8 +22,12 @@
 #include <ioctl.h>
 #include <guard_exceptions.h>
 
+#if defined(_WIN32) || defined (__CYGWIN__)
+#include <windows.h>
+#else
 #include <sched.h>
 #include <iostream>
+#endif
 
 void
 hello_world()
@@ -41,13 +45,15 @@ main(int argc, const char *argv[])
 
     vmcall_registers_t regs;
 
-    // We need to make sure that we are running on the correct core. When we
-    // perform the vmcall, its likely that this application will end up running
-    // on core #0 anyways, but this make sure there are no issues regardless.
+#if defined(_WIN32) || defined (__CYGWIN__)
+    SetProcessAffinityMask(GetCurrentProcess(), 1);
+#else
     cpu_set_t  mask;
     CPU_ZERO(&mask);
     CPU_SET(0, &mask);
     sched_setaffinity(0, sizeof(mask), &mask);
+#endif
+
 
     guard_exceptions([&]
     {
