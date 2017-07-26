@@ -95,7 +95,7 @@ public:
         if (reason == intel_x64::vmcs::exit_reason::basic_exit_reason::ept_violation)
         {
             // WARNING: Do not use the invept or invvpid instructions in this
-            //          function. Doing so will cause an intifinite loop. Intel
+            //          function. Doing so will cause an infinite loop. Intel
             //          specifically states not to invalidate as the hardware is
             //          doing this for you.
 
@@ -128,12 +128,12 @@ public:
                 if (virt == m_func)
                     m_state_save->rip = m_hook;
 
-                // We need the code to complete it's execution, which means we
+                // We need the code to complete its execution, which means we
                 // need to use the EPTP that doesn't contain our trap
                 m_vmcs_eapis->set_eptp(g_root_ept->eptp());
 
                 // Since we removed the trap on the EPTE, we need a way to turn
-                // the trap back on once the instruction finishes it's
+                // the trap back on once the instruction finishes its
                 // execution. To do this, we install a monitor trap callback,
                 // which will reverse the above operation.
                 this->register_monitor_trap(&exit_handler_hook::monitor_trap_callback);
@@ -217,7 +217,7 @@ public:
             auto &&func_phys_2m = m_func_phys & ~(ept::pd::size_bytes - 1);
             auto &&func_phys_4k = m_func_phys & ~(ept::pt::size_bytes - 1);
 
-            // We are going to unmap the previously setup 4k identify map, and
+            // We are going to unmap the previously setup 4k identity map, and
             // convert it back to a single 2m EPT entry. This calculates the
             // range just like above.
             auto &&saddr = func_phys_2m;
