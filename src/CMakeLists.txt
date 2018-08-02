@@ -1,9 +1,6 @@
 #
-# Bareflank Hypervisor Examples
-#
+# Bareflank Hypervisor
 # Copyright (C) 2015 Assured Information Security, Inc.
-# Author: Rian Quinn        <quinnr@ainfosec.com>
-# Author: Brendan Kerrigan  <kerriganb@ainfosec.com>
 #
 # This library is free software; you can redistribute it and/or
 # modify it under the terms of the GNU Lesser General Public
@@ -19,14 +16,12 @@
 # License along with this library; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 
-################################################################################
-# Subdirs
-################################################################################
+cmake_minimum_required(VERSION 3.6)
+project(example_vmm C CXX)
 
-SUBDIRS += src
+include(${SOURCE_CMAKE_DIR}/project.cmake)
+init_project()
 
-################################################################################
-# Common
-################################################################################
-
-include %HYPER_ABS%/common/common_subdir.mk
+eapis_add_vmm_executable(example_vmm
+    SOURCES vcpu_factory_hook.cpp
+)

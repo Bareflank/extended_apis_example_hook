@@ -4,8 +4,8 @@
 
 Using EPT to hook a function call is a common use case for reverse engineering,
 introspection, and offensive / defensive research. This repository provides a
-simple example of how this can be done using the [Bareflank Hypervisor](https://github.com/Bareflank/hypervisor), 
-and the [Extended APIs](https://github.com/Bareflank/extended_apis) repo using EPT / VPID. 
+simple example of how this can be done using the [Bareflank Hypervisor](https://github.com/Bareflank/hypervisor),
+and the [Extended APIs](https://github.com/Bareflank/extended_apis) repo using EPT.
 For further information about the Bareflank Hypervisor and how to create extensions, please see the following
 documentation.
 
@@ -13,36 +13,33 @@ documentation.
 
 ## Compilation / Usage
 
-This example uses both the Bareflank Hypervisor, as well as the Extended APIs
-repo. To keep things simple, we will use an in-tree build for this example.
-Note that the Extended APIs build on their own, but to get our example to
-build in-tree, we need to prepend "src_" to the folder name so that Bareflank
-knows to compile it as well.
+To setup our extension, run the following (assuming Linux):
 
 ```
-cd ~/
-git clone https://github.com/Bareflank/hypervisor.git
-cd ~/hypervisor
-git clone https://github.com/Bareflank/extended_apis.git
-git clone https://github.com/Bareflank/extended_apis_example_hook.git src_extended_apis_example_hook
-
-./tools/scripts/setup-<xxx>.sh --no-configure
-sudo reboot
-
-~/hypervisor/configure -m src_extended_apis_example_hook/bin/hook.modules
-make
+git clone https://github.com/Bareflank/hypervisor
+git clone https://github.com/Bareflank/extended_apis
+git clone https://github.com/Bareflank/extended_apis_example_hook.git
+mkdir build; cd build
+cmake ../hypervisor -DDEFAULT_VMM=example_vmm -DEXTENSION=../extended_apis -DEXTENSION=../extended_apis_example_hook
+make -j<# cores + 1>
 ```
 
-To run this example, we need to first load the hypervisor, and then run the
-example app that will get hooked by the hypervisor. Note that this app has to
-perform a vmcall, so it will need root privileges.
+To test out our extended version of Bareflank, run the following commands:
 
 ```
-make driver_load
+make driver_quick
 make quick
+```
 
-sudo ./makefiles/src_extended_apis_example_hook/app/bin/native/hook
+our extension has its own commands to run the example:
+```
+make info
+make hook
+```
 
-make stop
+to reverse this:
+
+```
+make unload
 make driver_unload
 ```

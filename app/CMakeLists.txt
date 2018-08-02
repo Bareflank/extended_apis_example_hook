@@ -1,9 +1,6 @@
 #
-# Bareflank Hypervisor Examples
-#
+# Bareflank Hypervisor
 # Copyright (C) 2015 Assured Information Security, Inc.
-# Author: Rian Quinn        <quinnr@ainfosec.com>
-# Author: Brendan Kerrigan  <kerriganb@ainfosec.com>
 #
 # This library is free software; you can redistribute it and/or
 # modify it under the terms of the GNU Lesser General Public
@@ -19,15 +16,14 @@
 # License along with this library; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 
-################################################################################
-# Subdirs
-################################################################################
+cmake_minimum_required(VERSION 3.6)
+project(hook C CXX)
 
-PARENT_SUBDIRS += app
-PARENT_SUBDIRS += vcpu_factory
+include(${SOURCE_CMAKE_DIR}/project.cmake)
+init_project()
 
-################################################################################
-# Common
-################################################################################
+add_executable(hook hook.cpp)
+target_link_static_libraries(hook bfintrinsics)
 
-include %HYPER_ABS%/common/common_subdir.mk
+install(TARGETS hook DESTINATION bin)
+
