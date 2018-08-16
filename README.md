@@ -20,7 +20,7 @@ git clone https://github.com/Bareflank/hypervisor
 git clone https://github.com/Bareflank/extended_apis
 git clone https://github.com/Bareflank/extended_apis_example_hook.git
 mkdir build; cd build
-cmake ../hypervisor -DDEFAULT_VMM=example_vmm -DEXTENSION=../extended_apis -DEXTENSION=../extended_apis_example_hook
+cmake ../hypervisor -DDEFAULT_VMM=example_vmm -DEXTENSION="../extended_apis;../extended_apis_example_hook"
 make -j<# cores + 1>
 ```
 
