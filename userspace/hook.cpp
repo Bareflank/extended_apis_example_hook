@@ -17,7 +17,13 @@
 // Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 
 #include <iostream>
+
+#include <bfaffinity.h>
 #include <intrinsics.h>
+
+// The goal of this userspace application is to output "hello world" to the
+// console three times, but on the second time, tell the hypervisor to hook
+// our call to output "hello world" to instead output "hooked hello world".
 
 void
 hello_world()
@@ -29,6 +35,20 @@ hooked_hello_world()
 
 int main()
 {
+    // We don't do core synchronization in the hypervisor for modifying EPT
+    // which means that its possible (unlikely) for a CPU race to occur. To
+    // prevent this, we tell our application to only run on CPU 0. To remove
+    // this, EPT would need to be set up on all cores, and modifications to
+    // EPT would require core synchronization, while requires IPIs that are
+    // trapped by the hypervisor and processed properly. This can be done
+    // using the EAPIs (all of the APIs are available), but it would make the
+    // example far more complicated.
+    //
+    set_affinity(0);
+
+    // Output "hello world" to the console to show that it works as expected.
+    // In this case, we expect "hello world" to be outputted.
+    //
     hello_world();
     hello_world();
 
@@ -43,6 +63,9 @@ int main()
         reinterpret_cast<uintptr_t>(hooked_hello_world)
     );
 
+    // Attempt to call "hello world". If the hypervisor has done its job,
+    // hooked_hello_world will be called instead.
+    //
     hello_world();
     hello_world();
 
@@ -56,8 +79,13 @@ int main()
         1
     );
 
+    // Output "hello world" to the console to show that it works as expected.
+    // In this case, we expect "hello world" to be outputted.
+    //
     hello_world();
     hello_world();
 
+    // Add a newline to the console to keep the output clean.
+    //
     std::clog << '\n';
 }

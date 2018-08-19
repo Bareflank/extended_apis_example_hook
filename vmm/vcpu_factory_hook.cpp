@@ -16,7 +16,7 @@
 // License along with this library; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 
-#include <mutex>
+#include <bfcallonce.h>
 
 #include <bfvmm/vcpu/vcpu_factory.h>
 #include <bfvmm/memory_manager/arch/x64/unique_map.h>
@@ -31,11 +31,21 @@ using namespace eapis::intel_x64;
 namespace test
 {
 
-std::once_flag flag{};
+bfn::once_flag flag{};
 
 ept::mmap g_guest_map{};
 ept::mmap::entry_type g_guest_pte_shadow{};
 
+// vCPU Subclass
+//
+// All VMM extensions start with subclassing the vCPU and then provide a
+// vCPU factory that creates your vCPU when a vCPU is needed. The APIs
+// that are provided by the hypervisor and it's extensions are all accessible
+// from the vCPU itself.
+//
+// Since we would like to inherit APIs from the EAPIs extension, we subclass
+// the EAPIs version of the vCPU.
+//
 class vcpu : public eapis::intel_x64::vcpu
 {
     // The following stores the:
@@ -59,6 +69,11 @@ class vcpu : public eapis::intel_x64::vcpu
 
 public:
 
+    // Constructor
+    //
+    // This is the only constructor the vCPU supports, so it must be
+    // overloaded.
+    //
     vcpu(vcpuid::type id) :
         eapis::intel_x64::vcpu{id}
     {
@@ -100,16 +115,12 @@ public:
         // this example is a global resource so it only needs to be set up
         // once and then can be used by the remaining cores.
         //
-        std::call_once(flag, [&] {
+        bfn::call_once(flag, [&] {
             ept::identity_map(
                 g_guest_map,
                 MAX_PHYS_ADDR
             );
         });
-
-        // Tell the VMCS to use our new EPT map
-        //
-        this->set_eptp(g_guest_map);
     }
 
     bool
@@ -190,7 +201,10 @@ public:
         // function
         //
         ::intel_x64::ept::pt::entry::execute_access::disable(m_pte);
-        ::intel_x64::vmx::invept_global();
+
+        // Tell the VMCS to use our new EPT map
+        //
+        this->set_eptp(g_guest_map);
     }
 
     bool ept_execute_violation_handler(
@@ -265,21 +279,14 @@ public:
             bfn::upper(m_hello_world_gpa, ::intel_x64::ept::pd::from)
         );
 
-        // Flush the TLB so that our conversion is seen by hardware.
-        //
-        ::intel_x64::vmx::invept_global();
-
         // Clear our saved addresses as they are no longer valid.
         //
         m_hello_world_gva = {};
         m_hello_world_gpa = {};
         m_hooked_hello_world_gva = {};
-    }
 
-    vcpu(vcpu &&) = delete;
-    vcpu &operator=(vcpu &&) = delete;
-    vcpu(const vcpu &) = delete;
-    vcpu &operator=(const vcpu &) = delete;
+        this->disable_ept();
+    }
 };
 
 }
@@ -291,6 +298,13 @@ public:
 namespace bfvmm
 {
 
+// vCPU Factory
+//
+// This function creates vCPUs when they are needed. This is required by all
+// extensions. When the vCPU manager is told to create a vCPU, it calls this
+// function, which you use in your extenion to create your customer vCPU
+// which has all of your custom VMM logic in it.
+//
 std::unique_ptr<vcpu>
 vcpu_factory::make_vcpu(vcpuid::type vcpuid, bfobject *obj)
 {

@@ -22,13 +22,13 @@
 
 userspace_extension(
     hook
-    SOURCE_DIR ${CMAKE_CURRENT_LIST_DIR}/app
+    SOURCE_DIR ${CMAKE_CURRENT_LIST_DIR}/userspace
     DEPENDS bfintrinsics
 )
 
 eapis_vmm_extension(
     hook
-    SOURCE_DIR ${CMAKE_CURRENT_LIST_DIR}/src
+    SOURCE_DIR ${CMAKE_CURRENT_LIST_DIR}/vmm
 )
 
 # ------------------------------------------------------------------------------
