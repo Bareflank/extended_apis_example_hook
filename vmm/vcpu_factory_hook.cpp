@@ -94,7 +94,7 @@ public:
         // monitor trap flag to single step attempts to execute code that
         // exists in the same physical page as our hello_world() function.
         //
-        this->add_monitor_trap_handler(
+        eapis()->add_monitor_trap_handler(
             mt_delegate_t::create<vcpu, &vcpu::monitor_trap_handler>(this)
         );
 
@@ -102,7 +102,7 @@ public:
         // violation is made for execute accesses,  ept_execute_violation_handler()
         // will be called which is where we will perform our hook.
         //
-        this->add_ept_execute_violation_handler(
+        eapis()->add_ept_execute_violation_handler(
             eptv_delegate_t::create<vcpu, &vcpu::ept_execute_violation_handler>(this)
         );
 
@@ -204,7 +204,7 @@ public:
 
         // Tell the VMCS to use our new EPT map
         //
-        this->set_eptp(g_guest_map);
+        eapis()->set_eptp(g_guest_map);
     }
 
     bool ept_execute_violation_handler(
@@ -234,7 +234,7 @@ public:
         // so that once it is done executing, we can disable execute access to
         // the page again. We do this by turning on the monitor trap flag.
         //
-        this->enable_monitor_trap_flag();
+        eapis()->enable_monitor_trap_flag();
         ::intel_x64::ept::pt::entry::execute_access::enable(m_pte);
 
         // Return true, telling the base hypervisor that we have handled the
@@ -285,7 +285,7 @@ public:
         m_hello_world_gpa = {};
         m_hooked_hello_world_gva = {};
 
-        this->disable_ept();
+        eapis()->disable_ept();
     }
 };
 
