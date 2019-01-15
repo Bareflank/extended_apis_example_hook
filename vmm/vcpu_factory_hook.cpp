@@ -19,9 +19,8 @@
 #include <bfcallonce.h>
 
 #include <bfvmm/vcpu/vcpu_factory.h>
-#include <bfvmm/memory_manager/arch/x64/unique_map.h>
-
 #include <eapis/hve/arch/intel_x64/vcpu.h>
+
 using namespace eapis::intel_x64;
 
 // -----------------------------------------------------------------------------
@@ -84,7 +83,7 @@ public:
         // Add a VMCall handler. This will catch the VMCalls made by the
         // userspace application and call the vmcall_handler() function.
         //
-        exit_handler()->add_handler(
+        this->add_handler(
             exit_reason::basic_exit_reason::vmcall,
             ::handler_delegate_t::create<vcpu, &vcpu::vmcall_handler>(this)
         );
@@ -94,7 +93,7 @@ public:
         // monitor trap flag to single step attempts to execute code that
         // exists in the same physical page as our hello_world() function.
         //
-        eapis()->add_monitor_trap_handler(
+        this->add_monitor_trap_handler(
             mt_delegate_t::create<vcpu, &vcpu::monitor_trap_handler>(this)
         );
 
@@ -102,14 +101,15 @@ public:
         // violation is made for execute accesses,  ept_execute_violation_handler()
         // will be called which is where we will perform our hook.
         //
-        eapis()->add_ept_execute_violation_handler(
+        this->add_ept_execute_violation_handler(
             eptv_delegate_t::create<vcpu, &vcpu::ept_execute_violation_handler>(this)
         );
 
         // Setup EPT. This will create our EPT memory map for the host OS. Note
         // that we use the identity_map() function as this ensures the MTRRs
         // are respected, and we map memory up to MAX_PHYS_ADDR which can be
-        // changed if you system has a ton of extra physical memory.
+        // changed if you system has a ton of extra physical memory. You could
+        // also use the max physical memory returned by CPUID.
         //
         // Also note that we only call this function once as the EPT map in
         // this example is a global resource so it only needs to be set up
@@ -125,7 +125,7 @@ public:
 
     bool
     vmcall_handler(
-        gsl::not_null<vmcs_t *> vmcs)
+        gsl::not_null<vcpu_t *> vcpu)
     {
         // If a VMCall is made, we either need to install our hook, or we
         // need to turn it off (uninstall it).
@@ -135,13 +135,13 @@ public:
         // sent to the serial device, and the vmcall will return safely.
         //
         guard_exceptions([&] {
-            switch(vmcs->save_state()->rax) {
+            switch(this->rax()) {
                 case 0:
-                    this->vmcall_handler_hook(vmcs);
+                    this->vmcall_handler_hook(vcpu);
                     break;
 
                 default:
-                    this->vmcall_handler_unhook(vmcs);
+                    this->vmcall_handler_unhook(vcpu);
                     break;
             };
         });
@@ -151,30 +151,31 @@ public:
         // the advance() function always returns true, which tells the base
         // hypervisor that this VM exit was successfully handled.
         //
-        return advance(vmcs);
+        return this->advance();
     }
 
     void
     vmcall_handler_hook(
-        gsl::not_null<vmcs_t *> vmcs)
+        gsl::not_null<vcpu_t *> vcpu)
     {
         // Store the guest virtual address of both the hello_world() function
         // and the hooked_hello_world() function
         //
-        m_hello_world_gva = vmcs->save_state()->rbx;
-        m_hooked_hello_world_gva = vmcs->save_state()->rcx;
+        m_hello_world_gva = this->rbx();
+        m_hooked_hello_world_gva = this->rcx();
 
         // The virtual address of the hello_world() function is a guest virtual
         // address. We need to use the guest's CR3 to figure out what the
         // guest's physical address of this virtual address is. The following
         // performs this conversion by parsing the guest's pages tables to
-        // get the physical address
+        // get the guest physical address, and since either EPT is not used
+        // or it is a 1:1 map, the guest physical address == the host physical
+        // address all the time so we can use the gpa as an hpa as needed.
         //
-        m_hello_world_gpa =
-            bfvmm::x64::virt_to_phys_with_cr3(
-                m_hello_world_gva,
-                ::intel_x64::vmcs::guest_cr3::get()
-            );
+        auto [hpa, ignored1] = this->gva_to_hpa(m_hello_world_gva);
+
+        m_hello_world_gpa = hpa;
+        bfignored(ignored1);
 
         // Now that we know what the physical address of the hello_world()
         // function is, we need to get the EPT PTE associated with this physical
@@ -192,10 +193,13 @@ public:
 
         // Get the 4k PTE associated with our hello_world() application
         //
-        m_pte = g_guest_map.entry(m_hello_world_gpa);
+        auto [pte, ignored2] = g_guest_map.entry(m_hello_world_gpa);
+
+        m_pte = pte;
+        bfignored(ignored2);
 
         // Disable execute access for the page associated with our
-        // hello_world() application, and flush the TLB. Any attempt to
+        // hello_world() application. Any attempt to
         // execute code on this page will generate an EPT violation which
         // will present us with an opportunity to hook the hello_world()
         // function
@@ -204,13 +208,13 @@ public:
 
         // Tell the VMCS to use our new EPT map
         //
-        eapis()->set_eptp(g_guest_map);
+        this->set_eptp(g_guest_map);
     }
 
     bool ept_execute_violation_handler(
-        gsl::not_null<vmcs_t *> vmcs, ept_violation_handler::info_t &info)
+        gsl::not_null<vcpu_t *> vcpu, ept_violation_handler::info_t &info)
     {
-        bfignored(vmcs);
+        bfignored(vcpu);
         bfignored(info);
 
         // If we got an EPT violation (i.e. this function was executed), it
@@ -222,8 +226,8 @@ public:
         // guest's instruction pointer towards our hooked_hello_world() function
         // instead
         //
-        if (vmcs->save_state()->rip == m_hello_world_gva) {
-            vmcs->save_state()->rip = m_hooked_hello_world_gva;
+        if (this->rip() == m_hello_world_gva) {
+            this->set_rip(m_hooked_hello_world_gva);
         }
 
         // Before we finish, we need to reenable execute access, otherwise
@@ -234,7 +238,7 @@ public:
         // so that once it is done executing, we can disable execute access to
         // the page again. We do this by turning on the monitor trap flag.
         //
-        eapis()->enable_monitor_trap_flag();
+        this->enable_monitor_trap_flag();
         ::intel_x64::ept::pt::entry::execute_access::enable(m_pte);
 
         // Return true, telling the base hypervisor that we have handled the
@@ -245,9 +249,9 @@ public:
     }
 
     bool monitor_trap_handler(
-        gsl::not_null<vmcs_t *> vmcs, monitor_trap_handler::info_t &info)
+        gsl::not_null<vcpu_t *> vcpu, monitor_trap_handler::info_t &info)
     {
-        bfignored(vmcs);
+        bfignored(vcpu);
         bfignored(info);
 
         // If this function is executed, it means that our memory access has
@@ -264,14 +268,14 @@ public:
 
     void
     vmcall_handler_unhook(
-        gsl::not_null<vmcs_t *> vmcs)
+        gsl::not_null<vcpu_t *> vcpu)
     {
-        bfignored(vmcs);
+        bfignored(vcpu);
         m_pte = g_guest_pte_shadow;
 
         // To uninstall our hook, we need to convert our 4k pages back to a
         // single 2M page. This will ensure that the next time our userspace
-        // application is execute, we can repeat our hook process over, and
+        // application is executed, we can repeat our hook process over, and
         // over, and over without our EPT map getting distorted over time.
         //
         ept::identity_map_convert_4k_to_2m(
@@ -285,7 +289,7 @@ public:
         m_hello_world_gpa = {};
         m_hooked_hello_world_gva = {};
 
-        eapis()->disable_ept();
+        this->disable_ept();
     }
 };
 
