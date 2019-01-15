@@ -161,6 +161,7 @@ public:
     vmcall_handler_hook(
         gsl::not_null<vcpu_t *> vcpu)
     {
+        bfignored(vcpu);
         // Store the guest virtual address of both the hello_world() function
         // and the hooked_hello_world() function
         //
